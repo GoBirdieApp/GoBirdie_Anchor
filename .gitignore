@@ -1,0 +1,59 @@
+# dep and build 
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+
+# env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.p8
+*.jks
+*.keystore
+*.mobileprovision
+credentials.json
+secrets.json
+**/secrets/
+.npmrc
+.yarnrc
+.yarnrc.yml
+
+
+
+# dev sandbox, vite
+sandbox/
+
+
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+.cursor/
+*.local
+
+#logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# other fluff
+.cache/
+.turbo/
+.vercel/
+.expo/
+fix.md
+DEV.md
+input_envelopes.md
+Trackman_Avrgs.md
+.scratch/

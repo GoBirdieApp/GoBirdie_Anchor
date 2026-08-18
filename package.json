@@ -1,0 +1,47 @@
+{
+  "name": "@gobirdie/club-profile-logic",
+  "version": "0.1.0",
+  "description": "Anchor profile generation for GoBirdie when Trackman data is unavailable",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OttoM1/Club_Profile_Logic.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "ci": "npm run typecheck && npm test && npm run build",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "fit:aero": "tsx scripts/fitAero.mts",
+    "sandbox:dev": "vite --config sandbox/vite.config.ts",
+    "sandbox:build": "vite build --config sandbox/vite.config.ts",
+    "sandbox:cli": "tsx sandbox/cli.mts"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.5.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^4.1.10"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
