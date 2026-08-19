@@ -6,7 +6,7 @@
     "lib": [
       "ES2020"
     ],
-    "rootDir": "src",
+    "rootDir": ".",
     "outDir": "dist",
     "declaration": true,
     "declarationMap": true,
@@ -18,13 +18,20 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "carry_onlyGate/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "Design",
+    "partial_dataGate",
+    "sandbox",
+    "design",
+    "scripts",
+    "docs",
     "src/**/__tests__/**",
-    "src/**/*.test.ts"
+    "src/**/*.test.ts",
+    "carry_onlyGate/**/__tests__/**",
+    "carry_onlyGate/**/*.test.ts"
   ]
 }

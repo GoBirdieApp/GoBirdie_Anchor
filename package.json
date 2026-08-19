@@ -1,23 +1,29 @@
 {
-  "name": "@gobirdie/club-profile-logic",
+  "name": "@gobirdie/anchor",
   "version": "0.1.0",
-  "description": "Anchor profile generation for GoBirdie when Trackman data is unavailable",
+  "description": "Carry-only anchor profile generation for GoBirdie — physics-backed club profiles from stock yardages",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
     }
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "carry_onlyGate",
+    "docs"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/OttoM1/Club_Profile_Logic.git"
+    "url": "https://github.com/GoBirdieApp/GoBirdie_Anchor.git"
+  },
+  "homepage": "https://gobirdieapp.com",
+  "bugs": {
+    "url": "https://github.com/GoBirdieApp/GoBirdie_Anchor/issues"
   },
   "scripts": {
     "build": "tsc",
@@ -26,7 +32,6 @@
     "ci": "npm run typecheck && npm test && npm run build",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "fit:aero": "tsx scripts/fitAero.mts",
     "sandbox:dev": "vite --config sandbox/vite.config.ts",
     "sandbox:build": "vite build --config sandbox/vite.config.ts",
     "sandbox:cli": "tsx sandbox/cli.mts"
@@ -37,11 +42,21 @@
     "@vitejs/plugin-react": "^4.5.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-router-dom": "^7.18.2",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^4.1.10"
   },
-  "license": "UNLICENSED",
-  "private": true
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": [
+    "golf",
+    "trackman",
+    "ball-flight",
+    "club-profile",
+    "gobirdie"
+  ]
 }
