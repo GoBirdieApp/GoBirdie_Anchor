@@ -24,9 +24,7 @@ secrets.json
 .yarnrc.yml
 
 # (private development)
-scripts/
 **/__tests__/
-src/physics/
 
 # fluff :D
 fix.md

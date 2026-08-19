@@ -13,12 +13,11 @@
 GoBirdie Anchor turns player's carry distances and handicap into a launch-monitor style profile: ball speed, launch angle, spin, apex, and landing angle; that is internally consistent with a calibrated ball-flight model.
 It powers the estimated-profile path in [GoBirdie](https://gobirdieapp.com).
 
-This repository currently publishes the **carry-only gate**: the production path used when a player supplies stock yardages but no full launch-monitor session.
-**partial-data gate** will be published later on down the road, as the public grade pipeline has been verified.
+This repository currently publishes the Public Grade path; used when a player supplies stock yardages but no full launch-monitor session.
 
 ---
 
-## Why this exists
+## What are we trying to solve
 
 Most golfers know how far they hit each club. Few have complete Launch Monitor numbers for every stick. GoBirdie Anchor closes that UX gap by:
 
@@ -147,4 +146,4 @@ Source is published for transparency and evaluation. Redistribution, commercial 
 - [GoBirdie](https://gobirdieapp.com)
 - [Repository](https://github.com/GoBirdieApp/GoBirdie_Anchor)
 - [Contact](contact@GoBirdieApp.com)
-- [Dev](otto.mularii@gmail.com)
+- [Dev](https://github.com/OttoM1)
