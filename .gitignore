@@ -23,10 +23,7 @@ secrets.json
 .yarnrc
 .yarnrc.yml
 
-# (private development)
-**/__tests__/
-
-# fluff :D
+# private notes
 fix.md
 DEV.md
 input_envelopes.md
