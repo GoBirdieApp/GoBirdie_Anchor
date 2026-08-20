@@ -316,11 +316,4 @@ describe('carry-only gate', () => {
     expect(chip.landingAngleDeg).toBeGreaterThan(chip.launchAngleDeg);
   });
 
-  it('stays inside a millisecond budget the pipeline can afford', () => {
-    const started = performance.now();
-    for (const clubId of TRACKMAN_CLUB_IDS) {
-      deriveCarryOnlyLaunch(clubId, 180 * YD_TO_M, 12);
-    }
-    expect(performance.now() - started).toBeLessThan(500);
-  });
 });

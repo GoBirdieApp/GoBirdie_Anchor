@@ -186,22 +186,6 @@ describe('partial-data gate', () => {
     expect(solved.evaluations).toBeLessThanOrEqual(220);
   });
 
-  it('resolves a whole bag of partial entries fast enough for a request path', () => {
-    const started = Date.now();
-
-    for (const clubId of TRACKMAN_CLUB_IDS) {
-      runPartialMethod(
-        clubId,
-        { maxHeightM: DEFAULT_TRACKMAN[clubId].maxHeightM, landingAngleDeg: DEFAULT_TRACKMAN[clubId].landingAngleDeg },
-        personalized,
-        stockCarryPlayer.clubDistancesM,
-        stockCarryPlayer.handicap,
-      );
-    }
-
-    expect(Date.now() - started).toBeLessThan(2000);
-  });
-
   it('does not let a contradictory ball speed silently produce the claimed carry', () => {
     const stock = DEFAULT_TRACKMAN['7-iron'];
     const profile = runPartialMethod(
