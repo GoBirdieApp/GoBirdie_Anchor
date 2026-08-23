@@ -188,6 +188,12 @@ The current local test suite covers carry-only gate behavior, partial-data recon
 
 ---
 
+<p align="center">
+  <img src="docs/assets/EbA.png" alt="Aerodynamics" width="100%">
+  <br>
+  <sub>GoBirdie - Engineered by aerodynamics.</sub>
+</p>
+
 ## License
 
 Copyright (c) 2026 GoBirdie. All rights reserved.
