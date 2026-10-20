@@ -61,14 +61,16 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-image: url('../../docs/assets/Overlay2.png');
+  /*background-image: url('../../docs/assets/Overlay2.png');*/
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
   pointer-events: none;
   filter: blur(6px) saturate(1.1) brightness(.8);
 }
-
+::-webkit-scrollbar {
+  display: none !important;
+}
 body::after {
   content: '';
   position: fixed;

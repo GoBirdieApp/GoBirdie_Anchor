@@ -1,8 +1,8 @@
 import type { TrackmanClubId } from '../src/types/clubs.js';
 import { HCP_BASELINE } from '../src/constants/defaults.js';
 import { MPH_TO_MPS, M_TO_YD, YD_TO_M } from '../src/constants/units.js';
-import { solveBallSpeedForCarry } from '../src/physics/solve.js';
-import { simulateFlight } from '../src/physics/trajectory.js';
+import { solveBallSpeedForCarry, type LaunchBand } from '../src/physics/solve.js';
+import { simulateFlight, type FlightResult } from '../src/physics/trajectory.js';
 import { clamp } from '../src/utils/math.js';
 import { normalizeHandicap } from '../src/utils/personalization.js';
 import { clampToBand, clubLaunchBand } from '../src/methods/launchBands.js';
@@ -25,21 +25,17 @@ export interface AnchorHarness {
 
 export const PGA_EXCEED_MARGIN_YD = 6;
 
-/** Modern low-spin/distance gear: per 3 hcp above scratch. OTTOM1, 14.08.2026 */
+/**
+ * Modern low-spin/distance gear: per 3 hcp above scratch.
+ * Launch gain must stay small next to the spin drop or the same-carry flight balloons
+ * (0.5 deg/step flew hcp 40 irons ~8 m higher than scratch).
+ * OTTOM1, 14.08.2026
+ */
 const HCP_SHAPE_STEP = 3;
 const SPIN_DROP_PER_HCP_STEP_RPM = 150;
-const LAUNCH_GAIN_PER_HCP_STEP_DEG = 0.5;
-const APEX_DROP_PER_HCP_STEP_M = 0.2;
-const LANDING_DROP_PER_HCP_STEP_DEG = 0.3;
+const LAUNCH_GAIN_PER_HCP_STEP_DEG = 0.2;
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
-
-export interface HandicapFlightAdjustments {
-  spinDeltaRpm: number;
-  launchDeltaDeg: number;
-  apexDeltaM: number;
-  landingDeltaDeg: number;
-}
 
 function handicapShapeSteps(hcp: number): number {
   const h = normalizeHandicap(hcp);
@@ -47,61 +43,41 @@ function handicapShapeSteps(hcp: number): number {
   return Math.floor(h / HCP_SHAPE_STEP);
 }
 
-/**
- * Carry stays fixed; higher hcp -> less spin, more launch, lower apex/landing (penetrating flight).
- * Ball speed is solved afterward so the flight still matches carry.
- * 
- * OTTOM1, 19.08.2026
- */
-export function handicapFlightAdjustments(
-  hcp: number = HCP_BASELINE,
-): HandicapFlightAdjustments {
-  const steps = handicapShapeSteps(hcp);
-  if (steps === 0) {
-    return { spinDeltaRpm: 0, launchDeltaDeg: 0, apexDeltaM: 0, landingDeltaDeg: 0 };
-  }
-  return {
-    spinDeltaRpm: -SPIN_DROP_PER_HCP_STEP_RPM * steps,
-    launchDeltaDeg: LAUNCH_GAIN_PER_HCP_STEP_DEG * steps,
-    apexDeltaM: -APEX_DROP_PER_HCP_STEP_M * steps,
-    landingDeltaDeg: -LANDING_DROP_PER_HCP_STEP_DEG * steps,
-  };
-}
-
 export interface HandicapLaunchSpinAdjustments {
   spinDeltaRpm: number;
   launchDeltaDeg: number;
 }
 
+/**
+ * Carry stays fixed; higher hcp -> less spin, slightly more launch, apex/landing near scratch.
+ * Ball speed is solved afterward so the flight still matches carry.
+ *
+ * OTTOM1, 19.08.2026
+ */
 export function handicapLaunchSpinAdjustments(
   hcp: number = HCP_BASELINE,
 ): HandicapLaunchSpinAdjustments {
-  const adj = handicapFlightAdjustments(hcp);
-  return { spinDeltaRpm: adj.spinDeltaRpm, launchDeltaDeg: adj.launchDeltaDeg };
+  const steps = handicapShapeSteps(hcp);
+  if (steps === 0) return { spinDeltaRpm: 0, launchDeltaDeg: 0 };
+  return {
+    spinDeltaRpm: -SPIN_DROP_PER_HCP_STEP_RPM * steps,
+    launchDeltaDeg: LAUNCH_GAIN_PER_HCP_STEP_DEG * steps,
+  };
 }
 
+/** Launch only climbs as far as the band lets spin drop; unpaired launch gain balloons the flight. */
 function applyHandicapLaunchSpinShape(
+  band: LaunchBand,
   launchAngleDeg: number,
   spinRPM: number,
   hcp: number,
 ): { launchAngleDeg: number; spinRPM: number } {
-  const adj = handicapFlightAdjustments(hcp);
-  return {
-    launchAngleDeg: launchAngleDeg + adj.launchDeltaDeg,
-    spinRPM: spinRPM + adj.spinDeltaRpm,
-  };
-}
+  const adj = handicapLaunchSpinAdjustments(hcp);
+  if (adj.spinDeltaRpm === 0) return { launchAngleDeg, spinRPM };
 
-function applyHandicapFlightMetrics(
-  scratchMaxHeightM: number,
-  scratchLandingAngleDeg: number,
-  hcp: number,
-): { maxHeightM: number; landingAngleDeg: number } {
-  const adj = handicapFlightAdjustments(hcp);
-  return {
-    maxHeightM: scratchMaxHeightM + adj.apexDeltaM,
-    landingAngleDeg: scratchLandingAngleDeg + adj.landingDeltaDeg,
-  };
+  const shapedSpin = clamp(spinRPM + adj.spinDeltaRpm, band.spinMinRpm, band.spinMaxRpm);
+  const spinApplied = clamp((spinRPM - shapedSpin) / -adj.spinDeltaRpm, 0, 1);
+  return clampToBand(band, launchAngleDeg + adj.launchDeltaDeg * spinApplied, shapedSpin);
 }
 
 function shapeLaunchSpinForCarry(
@@ -111,13 +87,12 @@ function shapeLaunchSpinForCarry(
 ): { launchAngleDeg: number; spinRPM: number } {
   const harness = buildAnchorHarness(clubId, carryM);
   const band = clubLaunchBand(clubId);
-  const hcpShaped = applyHandicapLaunchSpinShape(
+  let { launchAngleDeg, spinRPM } = applyHandicapLaunchSpinShape(
+    band,
     harness.launchAngleDeg,
     harness.spinRPM,
     handicap,
   );
-
-  let { launchAngleDeg, spinRPM } = clampToBand(band, hcpShaped.launchAngleDeg, hcpShaped.spinRPM);
   ({ launchAngleDeg, spinRPM } = applyLongCarryShape(clubId, carryM, launchAngleDeg, spinRPM));
   ({ launchAngleDeg, spinRPM } = applyIronCarryExcessShape(clubId, carryM, launchAngleDeg, spinRPM));
   ({ launchAngleDeg, spinRPM } = applyIronShortCarryShape(clubId, carryM, launchAngleDeg, spinRPM));
@@ -125,60 +100,72 @@ function shapeLaunchSpinForCarry(
   return { launchAngleDeg, spinRPM };
 }
 
+interface CarryLaunch {
+  ballSpeedMs: number;
+  launchAngleDeg: number;
+  spinRPM: number;
+}
+
+/** Physics speed for the carry; mid-irons also rescale spin to that speed. */
+function solveLaunchForCarry(
+  clubId: TrackmanClubId,
+  carryM: number,
+  shape: { launchAngleDeg: number; spinRPM: number },
+): CarryLaunch {
+  const { launchAngleDeg } = shape;
+  let { spinRPM } = shape;
+  let ballSpeedMs = solveBallSpeedForCarry(carryM, launchAngleDeg, spinRPM);
+
+  if (isMidIron(clubId)) {
+    spinRPM = clampToBand(
+      clubLaunchBand(clubId),
+      launchAngleDeg,
+      spinScaledToBallSpeed(spinRPM, ballSpeedMs, PGA_ANCHOR_PROFILE[clubId].ballSpeedMs),
+    ).spinRPM;
+    ballSpeedMs = solveBallSpeedForCarry(carryM, launchAngleDeg, spinRPM);
+  }
+
+  return { ballSpeedMs, launchAngleDeg, spinRPM };
+}
+
 function resolveScratchFlightMetrics(
   clubId: TrackmanClubId,
   carryM: number,
-  launchAngleDeg: number,
-  spinRPM: number,
+  scratch: CarryLaunch,
+  scratchFlight: FlightResult,
 ): { maxHeightM: number; landingAngleDeg: number } {
   const carryYd = carryM * M_TO_YD;
   const pga = PGA_ANCHOR_PROFILE[clubId];
-  const band = clubLaunchBand(clubId);
 
   if (clubId === 'Driver' && carryYd <= LONG_DRIVER_EMPIRICAL_MAX_YD) {
-    const ballSpeedMs = tourCalibratedDriverSpeedMs(carryYd, launchAngleDeg, spinRPM, carryM);
-    const flight = simulateFlight({ ballSpeedMs, launchAngleDeg, spinRPM });
+    const ballSpeedMs = Math.min(tourDriverSpeedMs(carryYd), scratch.ballSpeedMs);
+    const flight = simulateFlight({ ...scratch, ballSpeedMs });
     return {
       maxHeightM: flight.apexM * APEX_CALIBRATION,
       landingAngleDeg: flight.landingAngleDeg,
     };
   }
 
-  if (isMidIron(clubId)) {
-    const pgaCarryYd = pga.stockCarryM * M_TO_YD;
-    const stockApexM = ironStockReferenceApexM(clubId, 0);
+  const pgaCarryYd = pga.stockCarryM * M_TO_YD;
+  if (isMidIron(clubId) && carryYd > pgaCarryYd) {
     const pgaShape = shapedIronLaunchSpin(clubId, pga.stockCarryM, 0, false);
-
-    let ballSpeedMs = solveBallSpeedForCarry(carryM, launchAngleDeg, spinRPM);
-    const scaledSpin = clampToBand(
-      band,
-      launchAngleDeg,
-      spinScaledToBallSpeed(spinRPM, ballSpeedMs, pga.ballSpeedMs),
-    ).spinRPM;
-    ballSpeedMs = solveBallSpeedForCarry(carryM, launchAngleDeg, scaledSpin);
-    const flight = simulateFlight({ ballSpeedMs, launchAngleDeg, spinRPM: scaledSpin });
-
-    const maxHeightM =
-      carryYd > pgaCarryYd
-        ? ironGradualApexM(
-            carryYd,
-            pgaCarryYd,
-            stockApexM,
-            scaledSpin,
-            pgaShape.spinRPM,
-            launchAngleDeg,
-            pgaShape.launchAngleDeg,
-          )
-        : flight.apexM * APEX_CALIBRATION;
-
-    return { maxHeightM, landingAngleDeg: flight.landingAngleDeg };
+    return {
+      maxHeightM: ironGradualApexM(
+        carryYd,
+        pgaCarryYd,
+        ironStockReferenceApexM(clubId, 0),
+        scratch.spinRPM,
+        pgaShape.spinRPM,
+        scratch.launchAngleDeg,
+        pgaShape.launchAngleDeg,
+      ),
+      landingAngleDeg: scratchFlight.landingAngleDeg,
+    };
   }
 
-  const ballSpeedMs = solveBallSpeedForCarry(carryM, launchAngleDeg, spinRPM);
-  const flight = simulateFlight({ ballSpeedMs, launchAngleDeg, spinRPM });
   return {
-    maxHeightM: flight.apexM * APEX_CALIBRATION,
-    landingAngleDeg: flight.landingAngleDeg,
+    maxHeightM: scratchFlight.apexM * APEX_CALIBRATION,
+    landingAngleDeg: scratchFlight.landingAngleDeg,
   };
 }
 
@@ -304,15 +291,11 @@ function shapedIronLaunchSpin(
 ): { launchAngleDeg: number; spinRPM: number } {
   const harness = buildAnchorHarness(clubId, carryM);
   const band = clubLaunchBand(clubId);
-  const hcpShaped = applyHandicapLaunchSpinShape(
+  let { launchAngleDeg, spinRPM } = applyHandicapLaunchSpinShape(
+    band,
     harness.launchAngleDeg,
     harness.spinRPM,
     handicap,
-  );
-  let { launchAngleDeg, spinRPM } = clampToBand(
-    band,
-    hcpShaped.launchAngleDeg,
-    hcpShaped.spinRPM,
   );
   if (includeExcessShape) {
     ({ launchAngleDeg, spinRPM } = applyIronCarryExcessShape(clubId, carryM, launchAngleDeg, spinRPM));
@@ -457,10 +440,18 @@ function tourYardsPerMph(carryYd: number): number {
  
  OTTOM1, 18.08.2026 
  */
-function tourCalibratedDriverSpeedMs(carryYd: number, launchAngleDeg: number, spinRPM: number, carryM: number): number {
-  const tourMs = (carryYd / tourYardsPerMph(carryYd)) * MPH_TO_MPS;
-  const physicsMs = solveBallSpeedForCarry(carryM, launchAngleDeg, spinRPM);
-  return Math.min(tourMs, physicsMs);
+function tourDriverSpeedMs(carryYd: number): number {
+  return (carryYd / tourYardsPerMph(carryYd)) * MPH_TO_MPS;
+}
+
+/** Tour floor is anchored on the scratch flight; hcp shapes move speed by the physics ratio. */
+function tourCalibratedDriverSpeedMs(
+  carryYd: number,
+  launch: CarryLaunch,
+  scratch: CarryLaunch,
+): number {
+  const scratchMs = Math.min(tourDriverSpeedMs(carryYd), scratch.ballSpeedMs);
+  return scratch.ballSpeedMs > 0 ? scratchMs * (launch.ballSpeedMs / scratch.ballSpeedMs) : scratchMs;
 }
 
 const CARRY_SATURATION_TOLERANCE_M = 0.5;
@@ -478,23 +469,34 @@ export function deriveCarryOnlyLaunch(
   handicap: number = HCP_BASELINE,
 ): CarryOnlyLaunch {
   const harness = buildAnchorHarness(clubId, carryM);
-  const band = clubLaunchBand(clubId);
-  let { launchAngleDeg, spinRPM } = shapeLaunchSpinForCarry(clubId, carryM, handicap);
-  const scratchShape = shapeLaunchSpinForCarry(clubId, carryM, 0);
-  const scratchMetrics = resolveScratchFlightMetrics(
-    clubId,
-    carryM,
-    scratchShape.launchAngleDeg,
-    scratchShape.spinRPM,
-  );
-  const flightMetrics = applyHandicapFlightMetrics(
-    scratchMetrics.maxHeightM,
-    scratchMetrics.landingAngleDeg,
-    handicap,
-  );
+  const launch = solveLaunchForCarry(clubId, carryM, shapeLaunchSpinForCarry(clubId, carryM, handicap));
+  const flight = simulateFlight(launch);
+  const atScratch = handicapShapeSteps(handicap) === 0;
+  const scratch = atScratch
+    ? launch
+    : solveLaunchForCarry(clubId, carryM, shapeLaunchSpinForCarry(clubId, carryM, 0));
+  const scratchFlight = atScratch ? flight : simulateFlight(scratch);
+  const scratchMetrics = resolveScratchFlightMetrics(clubId, carryM, scratch, scratchFlight);
+
+  /*
+   * Calibrated scratch apex/landing, moved by the simulated hcp-vs-scratch difference
+   * so reported metrics always follow the reported launch and spin.
+   */
+  const maxHeightM =
+    scratchMetrics.maxHeightM + (flight.apexM - scratchFlight.apexM) * APEX_CALIBRATION;
+  const landingAngleDeg =
+    scratchMetrics.landingAngleDeg + (flight.landingAngleDeg - scratchFlight.landingAngleDeg);
 
   const carryYd = carryM * M_TO_YD;
-  const pga = PGA_ANCHOR_PROFILE[clubId];
+  const common = {
+    launchAngleDeg: launch.launchAngleDeg,
+    spinRPM: launch.spinRPM,
+    maxHeightM,
+    landingAngleDeg,
+    spinAxisDeg: harness.spinAxisDeg,
+    launchDirectionDeg: harness.launchDirectionDeg,
+    effectiveMassKg: harness.effectiveMassKg,
+  };
 
   /*
    * Driver: tour yd/mph floor + scaled apex. Mid-irons: physics speed, spin rescaled, apex capped.
@@ -502,57 +504,17 @@ export function deriveCarryOnlyLaunch(
    * OTTOM1, 18.08.2026
    */
   if (clubId === 'Driver' && carryYd <= LONG_DRIVER_EMPIRICAL_MAX_YD) {
-    const ballSpeedMs = tourCalibratedDriverSpeedMs(carryYd, launchAngleDeg, spinRPM, carryM);
     return {
-      ballSpeedMs,
-      launchAngleDeg,
-      spinRPM,
-      maxHeightM: flightMetrics.maxHeightM,
-      landingAngleDeg: flightMetrics.landingAngleDeg,
-      spinAxisDeg: harness.spinAxisDeg,
-      launchDirectionDeg: harness.launchDirectionDeg,
-      effectiveMassKg: harness.effectiveMassKg,
-      carryM: carryM,
+      ...common,
+      ballSpeedMs: tourCalibratedDriverSpeedMs(carryYd, launch, scratch),
+      carryM,
       carrySaturated: false,
     };
   }
 
-  if (isMidIron(clubId)) {
-    let ballSpeedMs = solveBallSpeedForCarry(carryM, launchAngleDeg, spinRPM);
-    spinRPM = clampToBand(
-      band,
-      launchAngleDeg,
-      spinScaledToBallSpeed(spinRPM, ballSpeedMs, pga.ballSpeedMs),
-    ).spinRPM;
-    ballSpeedMs = solveBallSpeedForCarry(carryM, launchAngleDeg, spinRPM);
-    const flight = simulateFlight({ ballSpeedMs, launchAngleDeg, spinRPM });
-
-    return {
-      ballSpeedMs,
-      launchAngleDeg,
-      spinRPM,
-      maxHeightM: flightMetrics.maxHeightM,
-      landingAngleDeg: flightMetrics.landingAngleDeg,
-      spinAxisDeg: harness.spinAxisDeg,
-      launchDirectionDeg: harness.launchDirectionDeg,
-      effectiveMassKg: harness.effectiveMassKg,
-      carryM: flight.carryM,
-      carrySaturated: flight.carryM < carryM - CARRY_SATURATION_TOLERANCE_M,
-    };
-  }
-
-  const ballSpeedMs = solveBallSpeedForCarry(carryM, launchAngleDeg, spinRPM);
-  const flight = simulateFlight({ ballSpeedMs, launchAngleDeg, spinRPM });
-
   return {
-    ballSpeedMs,
-    launchAngleDeg,
-    spinRPM,
-    maxHeightM: flightMetrics.maxHeightM,
-    landingAngleDeg: flightMetrics.landingAngleDeg,
-    spinAxisDeg: harness.spinAxisDeg,
-    launchDirectionDeg: harness.launchDirectionDeg,
-    effectiveMassKg: harness.effectiveMassKg,
+    ...common,
+    ballSpeedMs: launch.ballSpeedMs,
     carryM: flight.carryM,
     carrySaturated: flight.carryM < carryM - CARRY_SATURATION_TOLERANCE_M,
   };

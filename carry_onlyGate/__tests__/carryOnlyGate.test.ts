@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MPS_TO_MPH, M_TO_YD, YD_TO_M } from '../../src/constants/units.js';
 import { validateShotFeasibility } from '../../src/estimation/validateShotFeasibility.js';
-import { APEX_CALIBRATION, deriveCarryOnlyLaunch, handicapFlightAdjustments, handicapLaunchSpinAdjustments } from '../anchorBlend.js';
+import { APEX_CALIBRATION, deriveCarryOnlyLaunch, handicapLaunchSpinAdjustments } from '../anchorBlend.js';
 import { clubLaunchBand } from '../../src/methods/launchBands.js';
 import { PGA_ANCHOR_PROFILE } from '../../src/methods/PGA_Anchor.js';
 import { solveBallSpeedForCarry } from '../../src/physics/solve.js';
@@ -63,30 +63,61 @@ describe('carry-only gate', () => {
   it('steps spin and launch by handicap band', () => {
     expect(handicapLaunchSpinAdjustments(0)).toEqual({ spinDeltaRpm: 0, launchDeltaDeg: 0 });
     expect(handicapLaunchSpinAdjustments(2)).toEqual({ spinDeltaRpm: 0, launchDeltaDeg: 0 });
-    expect(handicapLaunchSpinAdjustments(3)).toEqual({ spinDeltaRpm: -150, launchDeltaDeg: 0.5 });
-    expect(handicapLaunchSpinAdjustments(12)).toEqual({ spinDeltaRpm: -600, launchDeltaDeg: 2 });
-    expect(handicapLaunchSpinAdjustments(54)).toEqual({ spinDeltaRpm: -2700, launchDeltaDeg: 9 });
+    for (const [hcp, spin, launch] of [
+      [3, -150, 0.2],
+      [12, -600, 0.8],
+      [54, -2700, 3.6],
+    ] as const) {
+      const adj = handicapLaunchSpinAdjustments(hcp);
+      expect(adj.spinDeltaRpm, `hcp ${hcp}`).toBe(spin);
+      expect(adj.launchDeltaDeg, `hcp ${hcp}`).toBeCloseTo(launch, 9);
+    }
   });
 
-  it('drops apex and landing per 3 hcp above scratch', () => {
-    expect(handicapFlightAdjustments(0)).toEqual({
-      spinDeltaRpm: 0,
-      launchDeltaDeg: 0,
-      apexDeltaM: 0,
-      landingDeltaDeg: 0,
-    });
-    expect(handicapFlightAdjustments(12)).toEqual({
-      spinDeltaRpm: -600,
-      launchDeltaDeg: 2,
-      apexDeltaM: -0.8,
-      landingDeltaDeg: -1.2,
-    });
+  it('reports apex and landing from the handicap-shaped flight, not a fixed offset', () => {
+    for (const clubId of ['7-iron', 'P-Wedge', '5-Wood'] as const) {
+      const carryM = 0.8 * PGA_ANCHOR_PROFILE[clubId].stockCarryM;
+      for (const handicap of [12, 40]) {
+        const solved = deriveCarryOnlyLaunch(clubId, carryM, handicap);
+        const flight = simulateFlight(solved);
 
-    const scratch = deriveCarryOnlyLaunch('7-iron', 176 * YD_TO_M, 0);
-    const hcp12 = deriveCarryOnlyLaunch('7-iron', 176 * YD_TO_M, 12);
+        expect(solved.maxHeightM, `${clubId} hcp ${handicap}`).toBeCloseTo(
+          flight.apexM * APEX_CALIBRATION,
+          6,
+        );
+        expect(solved.landingAngleDeg, `${clubId} hcp ${handicap}`).toBeCloseTo(
+          flight.landingAngleDeg,
+          6,
+        );
+      }
+    }
+  });
 
-    expect(scratch.maxHeightM - hcp12.maxHeightM).toBeCloseTo(0.8, 1);
-    expect(scratch.landingAngleDeg - hcp12.landingAngleDeg).toBeCloseTo(1.2, 1);
+  it('keeps hcp apex and landing near scratch at equal carry instead of ballooning', () => {
+    for (const carryM of [137.15, 173.73]) {
+      const scratch = deriveCarryOnlyLaunch('7-iron', carryM, 0);
+      const hcp40 = deriveCarryOnlyLaunch('7-iron', carryM, 40);
+
+      expect(hcp40.launchAngleDeg).toBeGreaterThan(scratch.launchAngleDeg);
+      expect(Math.abs(hcp40.maxHeightM - scratch.maxHeightM), `${carryM} apex`).toBeLessThan(2);
+      expect(Math.abs(hcp40.landingAngleDeg - scratch.landingAngleDeg), `${carryM} landing`).toBeLessThan(1.5);
+    }
+  });
+
+  it('stops adding launch once the band floors the hcp spin drop', () => {
+    const hcp12 = deriveCarryOnlyLaunch('Driver', 240 * YD_TO_M, 12);
+    const hcp54 = deriveCarryOnlyLaunch('Driver', 240 * YD_TO_M, 54);
+
+    expect(hcp54.spinRPM).toBeCloseTo(clubLaunchBand('Driver').spinMinRpm, 6);
+    expect(hcp54.launchAngleDeg).toBeCloseTo(hcp12.launchAngleDeg, 1);
+  });
+
+  it('moves driver ball speed with the hcp shape while keeping the tour floor at scratch', () => {
+    const scratch = deriveCarryOnlyLaunch('Driver', 240 * YD_TO_M, 0);
+    const hcp40 = deriveCarryOnlyLaunch('Driver', 240 * YD_TO_M, 40);
+
+    expect(scratch.ballSpeedMs * MPS_TO_MPH).toBeCloseTo(240 / (275 / 167), 0);
+    expect(hcp40.ballSpeedMs).not.toBeCloseTo(scratch.ballSpeedMs, 2);
   });
 
   it('lifts launch and drops spin with handicap while holding carry', () => {
@@ -299,11 +330,7 @@ describe('carry-only gate', () => {
 
     const flight = simulateFlight(absurd);
     expect(flight.carryM).toBeCloseTo(absurd.carryM, 6);
-    const scratch = deriveCarryOnlyLaunch('Driver', absurd.carryM, 0);
-    expect(absurd.maxHeightM).toBeCloseTo(
-      scratch.maxHeightM + handicapFlightAdjustments(5).apexDeltaM,
-      5,
-    );
+    expect(absurd.maxHeightM).toBeCloseTo(flight.apexM * APEX_CALIBRATION, 5);
   });
 
   it('handles a carry far below the club it is asked for', () => {
