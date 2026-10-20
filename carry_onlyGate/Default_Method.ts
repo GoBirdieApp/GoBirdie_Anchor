@@ -8,7 +8,7 @@ import { normalizeHandicap } from '../src/utils/personalization.js';
 import { deriveCarryOnlyLaunch } from './anchorBlend.js';
 
 /**
- * Carry-only path: LPGA to PGA gradient, hcp steps (−150 rpm / +0.5deg per 3 hcp), 6 yd override past PGA stock.
+ * Carry-only path: LPGA to PGA gradient, hcp steps (−150 rpm / +0.2deg per 3 hcp), 6 yd override past PGA stock.
  * OTTOM1, 29.07.2026
  */
 

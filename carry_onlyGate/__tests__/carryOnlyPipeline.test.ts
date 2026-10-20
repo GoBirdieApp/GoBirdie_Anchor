@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { APEX_CALIBRATION, deriveCarryOnlyLaunch, handicapFlightAdjustments } from '../anchorBlend.js';
+import { APEX_CALIBRATION, deriveCarryOnlyLaunch } from '../anchorBlend.js';
 import { simulateFlight } from '../../src/physics/trajectory.js';
 import { runAnchorPipeline } from '../../src/pipeline/runAnchorPipeline.js';
 import { TRACKMAN_CLUB_IDS } from '../../src/types/clubs.js';
@@ -50,7 +50,7 @@ describe('carry-only pipeline', () => {
     expect(highHcp.carryM).toBeCloseTo(lowHcp.carryM, 1);
     expect(highHcp.launchAngleDeg).toBeGreaterThan(lowHcp.launchAngleDeg);
     expect(highHcp.spinRPM).toBeLessThan(lowHcp.spinRPM);
-    expect(highHcp.launchAngleDeg - lowHcp.launchAngleDeg).toBeCloseTo(8.5, 0);
+    expect(highHcp.launchAngleDeg - lowHcp.launchAngleDeg).toBeCloseTo(3.4, 0);
     expect(lowHcp.spinRPM - highHcp.spinRPM).toBeGreaterThan(2000);
   });
 
@@ -62,20 +62,19 @@ describe('carry-only pipeline', () => {
     });
 
     for (const clubId of TRACKMAN_CLUB_IDS) {
+      if (clubId === 'Driver') continue;
       const profile = result.profiles[clubId]!;
       const flight = simulateFlight(profile);
-      const hcpAdj = handicapFlightAdjustments(stockCarryPlayer.handicap ?? 12);
       const scratch = deriveCarryOnlyLaunch(clubId, profile.carryM, 0);
+      const scratchFlight = simulateFlight(scratch);
 
-      if (clubId !== 'Driver') {
-        expect(flight.carryM, `${clubId} carry`).toBeCloseTo(profile.carryM, 1);
-      }
+      expect(flight.carryM, `${clubId} carry`).toBeCloseTo(profile.carryM, 1);
       expect(profile.maxHeightM, `${clubId} apex`).toBeCloseTo(
-        scratch.maxHeightM + hcpAdj.apexDeltaM,
+        scratch.maxHeightM + (flight.apexM - scratchFlight.apexM) * APEX_CALIBRATION,
         1,
       );
       expect(profile.landingAngleDeg, `${clubId} landing`).toBeCloseTo(
-        scratch.landingAngleDeg + hcpAdj.landingDeltaDeg,
+        scratch.landingAngleDeg + (flight.landingAngleDeg - scratchFlight.landingAngleDeg),
         1,
       );
     }

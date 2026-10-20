@@ -25,6 +25,9 @@ export default function Launcher() {
           </p>
           <span className="launcher-card-action">Open partial sandbox →</span>
         </a>
+
+      
+
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 {
   "name": "@gobirdie/anchor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Carry-only anchor profile generation for GoBirdie — physics-backed club profiles from stock yardages",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -32,7 +32,7 @@
     "ci": "npm run typecheck && npm test && npm run build",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "sandbox:dev": "vite --config sandbox/vite.config.ts",
+    "sb": "vite --config sandbox/vite.config.ts",
     "sandbox:build": "vite build --config sandbox/vite.config.ts",
     "sandbox:cli": "tsx sandbox/cli.mts"
   },
